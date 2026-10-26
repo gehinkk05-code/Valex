@@ -943,42 +943,15 @@ function ImGui:ContainerClass(Frame: Frame, Class, Window)
 			return Config
 		end
 
-		------// Move events
-		local function MouseMove()
-			if Config.ReadOnly then return end
-			if not Dragging then return end
-			
-			local MouseX = UserInputService:GetMouseLocation().X
-			local LeftPos = Slider.AbsolutePosition.X
-
-			local Percentage = (MouseX-LeftPos)/Slider.AbsoluteSize.X
-			Percentage = math.clamp(Percentage, 0, 1)
-			Config:SetValue(Percentage, true)
-		end
-
-		local function InputEnded(inputObject)
-			if not Dragging then return end
-			if inputObject.UserInputType ~= InputType then return end
-
-			Dragging = false
-			MouseMoveConnection:Disconnect()
-		end
-
-		--// Connect mouse events
-		ImGui:ConnectHover({
-			Parent = Slider,
-			OnInput = function(MouseHovering, Input)
-				if not MouseHovering then return end
-				if Input.UserInputType ~= InputType then return end
-
-				Dragging = true
-				MouseMoveConnection = Mouse.Move:Connect(MouseMove) --// Save heavy performance
+		--// Input (mouse + touch)
+		ImGui:ConnectDrag(Slider, function(Position)
+			local Percentage = (Position.X - Slider.AbsolutePosition.X) / Slider.AbsoluteSize.X
+			Config:SetValue(math.clamp(Percentage, 0, 1), true)
+		end, {
+			CanDrag = function()
+				return not Config.ReadOnly
 			end
 		})
-
-		--// Connect events
-		Slider.Activated:Connect(MouseMove)
-		UserInputService.InputEnded:Connect(InputEnded)
 
 		--// Update UI
 		Config:SetValue(Value)
@@ -1066,6 +1039,227 @@ function ImGui:ContainerClass(Frame: Frame, Class, Window)
 		Config:SetValue(Key)
 
 		ObjectClass = self:NewInstance(Keybind, Config)
+		return ObjectClass
+	end
+
+	function ContainerClass:ColorPicker(Config)
+		Config = Config or {}
+
+		local Color: Color3 = Config.Value or Color3.new(1, 1, 1)
+		local Hue, Sat, Val = Color:ToHSV()
+		local Height = Config.PanelHeight or 120
+
+		--// Container
+		local Container = ImGui:CreateInstance("Frame", nil, {
+			Name = "ColorPicker",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		})
+		ImGui:CreateInstance("UIListLayout", Container, {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		})
+
+		--// Header (label + preview)
+		local Header = ImGui:CreateInstance("Frame", Container, {
+			Name = "Header",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 22),
+			LayoutOrder = 1,
+		})
+
+		local Label: TextLabel = Prefabs.Label:Clone()
+		Label.Name = "Label"
+		Label.Visible = true
+		Label.AutomaticSize = Enum.AutomaticSize.None
+		Label.AnchorPoint = Vector2.new(0, 0.5)
+		Label.Position = UDim2.new(0, 0, 0.5, 0)
+		Label.Size = UDim2.new(1, -50, 1, 0)
+		Label.TextXAlignment = Enum.TextXAlignment.Left
+		Label.Text = Config.Label or "Color"
+		Label.Parent = Header
+
+		local Preview = ImGui:CreateInstance("TextButton", Header, {
+			Name = "Preview",
+			Text = "",
+			AutoButtonColor = false,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(40, 18),
+			BackgroundColor3 = Color,
+			BackgroundTransparency = 0,
+			BorderSizePixel = 0,
+		})
+		ImGui:CreateInstance("UICorner", Preview, {CornerRadius = UDim.new(0, 4)})
+		ImGui:CreateInstance("UIStroke", Preview, {
+			Color = Color3.fromRGB(200, 200, 200),
+			Transparency = 0.5,
+			Thickness = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		})
+
+		--// Picker panel
+		local Panel = ImGui:CreateInstance("Frame", Container, {
+			Name = "Panel",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, Height),
+			LayoutOrder = 2,
+			Visible = false,
+		})
+
+		--// Saturation / Value square
+		local SV = ImGui:CreateInstance("Frame", Panel, {
+			Name = "SV",
+			BackgroundColor3 = Color3.fromHSV(Hue, 1, 1),
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, -28, 1, 0),
+		})
+		ImGui:CreateInstance("UICorner", SV, {CornerRadius = UDim.new(0, 4)})
+
+		local White = ImGui:CreateInstance("Frame", SV, {
+			Name = "White",
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+		})
+		ImGui:CreateInstance("UICorner", White, {CornerRadius = UDim.new(0, 4)})
+		ImGui:CreateInstance("UIGradient", White, {
+			Transparency = NumberSequence.new(0, 1),
+		})
+
+		local Black = ImGui:CreateInstance("Frame", SV, {
+			Name = "Black",
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+		})
+		ImGui:CreateInstance("UICorner", Black, {CornerRadius = UDim.new(0, 4)})
+		ImGui:CreateInstance("UIGradient", Black, {
+			Rotation = 90,
+			Transparency = NumberSequence.new(1, 0),
+		})
+
+		local SVCursor = ImGui:CreateInstance("Frame", SV, {
+			Name = "Cursor",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(12, 12),
+			ZIndex = 5,
+		})
+		ImGui:CreateInstance("UICorner", SVCursor, {CornerRadius = UDim.new(1, 0)})
+		ImGui:CreateInstance("UIStroke", SVCursor, {
+			Color = Color3.new(1, 1, 1),
+			Thickness = 2,
+		})
+
+		--// Hue bar
+		local HueBar = ImGui:CreateInstance("Frame", Panel, {
+			Name = "Hue",
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			Position = UDim2.new(1, -20, 0, 0),
+			Size = UDim2.new(0, 20, 1, 0),
+		})
+		ImGui:CreateInstance("UICorner", HueBar, {CornerRadius = UDim.new(0, 4)})
+		ImGui:CreateInstance("UIGradient", HueBar, {
+			Rotation = 90,
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
+				ColorSequenceKeypoint.new(1 / 6, Color3.fromHSV(1 / 6, 1, 1)),
+				ColorSequenceKeypoint.new(2 / 6, Color3.fromHSV(2 / 6, 1, 1)),
+				ColorSequenceKeypoint.new(3 / 6, Color3.fromHSV(3 / 6, 1, 1)),
+				ColorSequenceKeypoint.new(4 / 6, Color3.fromHSV(4 / 6, 1, 1)),
+				ColorSequenceKeypoint.new(5 / 6, Color3.fromHSV(5 / 6, 1, 1)),
+				ColorSequenceKeypoint.new(1, Color3.fromHSV(0, 1, 1)),
+			}),
+		})
+
+		local HueCursor = ImGui:CreateInstance("Frame", HueBar, {
+			Name = "Cursor",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 4, 0, 6),
+			ZIndex = 5,
+		})
+		ImGui:CreateInstance("UICorner", HueCursor, {CornerRadius = UDim.new(0, 3)})
+		ImGui:CreateInstance("UIStroke", HueCursor, {
+			Color = Color3.new(1, 1, 1),
+			Thickness = 2,
+		})
+
+		local ObjectClass = self:NewInstance(Container, Config)
+
+		local function Callback(...)
+			local func = Config.Callback or NullFunction
+			return func(ObjectClass, ...)
+		end
+
+		--// Refresh UI from HSV
+		local function Refresh(NoCallback: boolean?)
+			local NewColor = Color3.fromHSV(Hue, Sat, Val)
+			Color = NewColor
+			Config.Value = NewColor
+
+			SV.BackgroundColor3 = Color3.fromHSV(Hue, 1, 1)
+			Preview.BackgroundColor3 = NewColor
+			SVCursor.Position = UDim2.fromScale(Sat, 1 - Val)
+			HueCursor.Position = UDim2.fromScale(0.5, Hue)
+
+			if not NoCallback then
+				Callback(NewColor)
+			end
+		end
+
+		function Config:SetValue(NewColor: Color3, NoCallback: boolean?)
+			local H, S, V = NewColor:ToHSV()
+			if S > 0 and V > 0 then
+				Hue = H --// Keep the old hue for greys/black
+			end
+			Sat, Val = S, V
+			Refresh(NoCallback)
+			return Config
+		end
+
+		function Config:GetValue()
+			return Color
+		end
+
+		function Config:SetLabel(Text)
+			Label.Text = Text
+			return Config
+		end
+
+		function Config:SetOpen(Open: boolean)
+			Config.Open = Open
+			Panel.Visible = Open
+			return Config
+		end
+
+		--// Input (mouse + touch)
+		ImGui:ConnectDrag(SV, function(Position)
+			local Abs, Size = SV.AbsolutePosition, SV.AbsoluteSize
+			Sat = math.clamp((Position.X - Abs.X) / Size.X, 0, 1)
+			Val = 1 - math.clamp((Position.Y - Abs.Y) / Size.Y, 0, 1)
+			Refresh()
+		end)
+
+		ImGui:ConnectDrag(HueBar, function(Position)
+			local Abs, Size = HueBar.AbsolutePosition, HueBar.AbsoluteSize
+			Hue = math.clamp((Position.Y - Abs.Y) / Size.Y, 0, 0.999)
+			Refresh()
+		end)
+
+		Preview.Activated:Connect(function()
+			Config:SetOpen(not Config.Open)
+		end)
+
+		Config:SetOpen(Config.Open == true)
+		Refresh(true)
+
 		return ObjectClass
 	end
 
@@ -1421,6 +1615,70 @@ function ImGui:ApplyResizable(MinSize, Frame: Frame, Dragger: TextButton, Config
 			DragStart = nil
 		end
 	end)
+end
+
+--// Universal drag handler (mouse + touch). Callback receives the input Vector3 position.
+--// Parent ScrollingFrames are locked while dragging so a finger doesn't scroll them.
+function ImGui:ConnectDrag(Target: GuiObject, Callback, Config)
+	Config = Config or {}
+
+	local DragInput: InputObject? = nil
+	local Frozen = {}
+
+	local function Freeze()
+		local Parent = Target.Parent
+		while Parent do
+			if Parent:IsA("ScrollingFrame") and Parent.ScrollingEnabled then
+				Parent.ScrollingEnabled = false
+				table.insert(Frozen, Parent)
+			end
+			Parent = Parent.Parent
+		end
+	end
+
+	local function Unfreeze()
+		for _, Scroll in next, Frozen do
+			Scroll.ScrollingEnabled = true
+		end
+		table.clear(Frozen)
+	end
+
+	Target.InputBegan:Connect(function(Input)
+		local Type = Input.UserInputType
+		if Type ~= Enum.UserInputType.MouseButton1 and Type ~= Enum.UserInputType.Touch then return end
+		if DragInput then return end
+		if Config.CanDrag and not Config.CanDrag() then return end
+
+		DragInput = Input
+		Freeze()
+		Callback(Input.Position)
+	end)
+
+	UserInputService.InputChanged:Connect(function(Input)
+		if not DragInput then return end
+
+		local Type = Input.UserInputType
+		local IsMouse = Type == Enum.UserInputType.MouseMovement and DragInput.UserInputType == Enum.UserInputType.MouseButton1
+		local IsTouch = Type == Enum.UserInputType.Touch and Input == DragInput
+		if not (IsMouse or IsTouch) then return end
+
+		Callback(Input.Position)
+	end)
+
+	UserInputService.InputEnded:Connect(function(Input)
+		if not DragInput then return end
+
+		local IsSameTouch = Input == DragInput
+		local IsMouseRelease = Input.UserInputType == Enum.UserInputType.MouseButton1
+			and DragInput.UserInputType == Enum.UserInputType.MouseButton1
+
+		if IsSameTouch or IsMouseRelease then
+			DragInput = nil
+			Unfreeze()
+		end
+	end)
+
+	return Config
 end
 
 function ImGui:ConnectHover(Config)
